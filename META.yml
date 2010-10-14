@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Device-Inverter-Aurora
-version:            0.02
+version:            0.03
 abstract:           Module for communicating with Power-One Aurora inverters.
 author:
     - Shannon Wynter
