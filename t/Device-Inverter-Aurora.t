@@ -101,6 +101,13 @@ for my $test (@tests) {
 		$obj->{port}->{_tx_buf} = '';
 
 		# Compare the result of the function with expected results
-		is_deeply $result, $test->[3], 'Expected return';
+		if (ref $test->[3] || $test->[3] =~ /^c/ || $test->[3] !~ /\./) {
+			# For everything that isn't a float
+			is_deeply $result, $test->[3], 'Expected return';
+		}
+		else {
+			#Floats
+			cmp_ok sprintf('%0.8f', $result), 'eq', sprintf('%0.8f', $test->[3]), 'Expected return';
+		}
 	}
 }

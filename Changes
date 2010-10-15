@@ -1,5 +1,10 @@
 Revision history for Perl extension Device::Inverter::Aurora.
 
+0.04  Fri Oct 15 12:59:49 2010
+	- Make tests a little less sensitive to floating point issues
+	- Add version to strings
+	- Restrict version of MakeMaker
+
 0.03  Thu Oct 14 12:14:18 2010
 	- Unbreak distribution
 
