@@ -35,7 +35,23 @@ our @EXPORT_OK = ( @{ $EXPORT_TAGS{all} } );
 
 our @EXPORT = qw( );
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
+
+sub _error {
+	my $self = shift;
+	my $error = shift;
+
+	$self->{error} = $error;
+	carp $error unless $self->{quiet};
+	return 1;
+}
+
+sub lastError {
+	my $self = shift;
+	my $error = $self->{error};
+	$self->{error} = undef;
+	return $error;
+}
 
 sub new {
 	my $caller = shift;
@@ -47,16 +63,18 @@ sub new {
 	# Extract some configuration from the given arguments
 	my $debug    = $args{debug}   || 0;
 	my $retries  = $args{retries} || 0;
+	my $backoff  = $args{backoff} || 1;
 	my $address  = $args{address} || 2;
 	my $port_str = $args{port}    || '/dev/ttyS0';
 	my $raw      = $args{raw}     || 0;
+	my $quiet    = $args{quiet}   || 0;
 
 	# Configure the serial port
 	my $port = ($TEST
-		? new Test::Device::SerialPort($port_str)
+		? new Test::Device::SerialPort($port_str, debug => $debug)
 		: ($onWindows
-			? new Win32::SerialPort($port_str) 
-			: new Device::SerialPort($port_str)
+			? new Win32::SerialPort($port_str, debug => $debug)
+			: new Device::SerialPort($port_str, debug => $debug)
 		)
 	) or croak "Can't open $port_str: $^E";
 
@@ -68,7 +86,6 @@ sub new {
 	$port->datatype($args{datatype} || 'raw');
 	$port->handshake($args{handshake} || 'none');
 	$port->read_const_time($args{read_const_time} || 150);
-	$port->debug($debug);
 
 	$port->write_settings or warn "Unable to write settings to $port_str";
 
@@ -78,7 +95,9 @@ sub new {
 	my $self = bless {
 		port_str         => $port_str,
 		debug            => $debug,
+		quiet            => $quiet,
 		retries          => $retries,
+		backoff          => $backoff,
 		port             => $port,
 		address          => $address,
 		error            => undef,
@@ -110,22 +129,25 @@ sub communicate {
 	while ($try++ < $self->{retries}) {
 		$self->{port}->purge_all;
 
+		# Give the coms a break for a $backoff period
+		sleep $self->{backoff} if $try > 1 && $self->{backoff};
+
 		# Transmit data, make sure 10 bytes are sent
 		warn "Sending " , hexstr($str) , "\n" if $self->{debug};
 		my $sent = $self->{port}->write($str);
-		carp "Failed to write all bytes" and next unless $sent == 10;
+		$self->_error("Failed to write all bytes") and next unless defined $sent and $sent == 10;
 
 		# Receive data, make sure that 8 bytes are read
 		my $read = $self->{port}->read(8);
 		warn "Received " , hexstr($read) , "\n" if $self->{debug};
-		carp "Failed to read in all bytes" and next unless length $read == 8;
+		$self->_error("Failed to read in all bytes") and next unless defined $read and length $read == 8;
 
 		# First 6 bytes of the reply are unsigned characters of data, the last 2 are a short CRC
 		my @reply = unpack 'C6v', $read;
 		my $reply_crc = pop @reply;
 
 		# Verify the CRC matches
-		carp "CRC failure" and next unless crc(substr($read,0,6)) == $reply_crc;
+		$self->_error("CRC failure") and next unless crc(substr($read,0,6)) == $reply_crc;
 
 		return wantarray ? @reply : \@reply;
 	}
@@ -160,8 +182,7 @@ sub transmissionCheck {
 	return 1 if $input == 0;
 
 	# All is not so good, complain and return false
-	$self->{error} = [$input, $translation];
-	carp "Transmission State: $translation ($input)";
+	$self->_error("Transmission State: $translation ($input)");
 	return 0;
 }
 
@@ -596,7 +617,7 @@ Shortcut for getCumulatedEnergy to get the total value (like forever man)
 
 =head2 getPartialEnergy([I<address>])
 
-Shortcut for getCumulatedEnergy to egt the partial value (since last reset)
+Shortcut for getCumulatedEnergy to get the partial value (since last reset)
 
 =head2 getDSPData(I<parameter>[, I<address>])
 
@@ -691,6 +712,10 @@ Get the amount of time the inverter has been on grid.
 =head2 getResetRunTime([I<address>])
 
 Get a timer sine reset? of what?
+
+=head2 lastError()
+
+Returns the last error/warning and clears the buffer
 
 =head1 EXPORT
 
